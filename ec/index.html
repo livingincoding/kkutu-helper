@@ -29,6 +29,27 @@ async function dec(file,pw){const ab=await file.arrayBuffer();const u=new Uint8A
 
 document.getElementById('go').addEventListener('click',async()=>{const m=document.getElementById('mode').value;const f=document.getElementById('file').files[0];const pw=document.getElementById('pw').value;const msg=document.getElementById('msg');msg.textContent='';if(!f){msg.textContent='파일 선택';return}if(!pw){msg.textContent='비밀번호 입력';return}try{ if(m==='enc'){msg.textContent=await enc(f,pw)}else{const r=await dec(f,pw);save(r.blob,r.name);msg.textContent='복호화 성공'} }catch(e){msg.textContent=e}
 });
+// --- 원본 확장자 저장 기능 추가 ---
+// 파일 이름에서 확장자 추출
+function getExt(name){const i=name.lastIndexOf('.');return i>-1?name.slice(i+1):''}
+// 암호화 시: [MAGIC][SALT][IV][EXT_LEN][EXT][CIPHER]
+async function enc(file,pw){const extStr=getExt(file.name);const extBytes=new TextEncoder().encode(extStr);const extLen=new Uint8Array([extBytes.length]);
+ const ab=await file.arrayBuffer();const salt=crypto.getRandomValues(new Uint8Array(SALT));const iv=crypto.getRandomValues(new Uint8Array(IV));const key=await derive(pw,salt);
+ const cipher=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,ab));
+ const out=cat([MAGIC,salt,iv,extLen,extBytes,cipher]);
+ save(new Blob([out]), file.name + '.1129code');return '암호화 완료'}
+// 복호화 시: EXT_LEN 읽고 EXT 복원 후 originalName.ext 로 저장
+async function dec(file,pw){const ab=await file.arrayBuffer();const u=new Uint8Array(ab);
+ if(u.length<4+SALT+IV+1) throw '파일 포맷 오류';for(let i=0;i<4;i++){if(u[i]!==MAGIC[i]) throw '포맷 불일치'}
+ let p=4;const salt=u.slice(p,p+=SALT);const iv=u.slice(p,p+=IV);const extLen=u[p++];const ext=u.slice(p,p+=extLen);
+ const cipher=u.slice(p);
+ const key=await derive(pw,salt);
+ let plain;try{plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher));}catch{throw '비밀번호 틀림 또는 손상'}
+ const extStr=new TextDecoder().decode(ext);
+ const clean=file.name.endsWith('.1129code')?file.name.slice(0,-8):file.name;
+ const base=clean.includes('.')?clean.slice(0,clean.lastIndexOf('.')):clean;
+ save(new Blob([plain]), base + (extStr?'.'+extStr:''));
+ return '복호화 성공'}
 </script>
 </body>
 </html>
