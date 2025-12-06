@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>1129code Encrypt/Decrypt</title>
+<style>body{font-family:system-ui;margin:18px;background:#f7fafc;color:#0f172a} .box{max-width:720px;margin:0 auto;background:#fff;padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(2,6,23,.06)}label{display:block;margin-top:10px;font-weight:600}input,button{width:100%;padding:8px;margin-top:6px;border-radius:8px;border:1px solid #e6eaf0}button{background:#111827;color:#fff;border:0;cursor:pointer}small{color:#475569}</style>
+</head>
+<body>
+<div class="box">
+  <h2>1129code (Encrypt / Decrypt)</h2>
+  <label>동작 선택</label>
+  <select id="mode"><option value="enc">암호화</option><option value="dec">복호화</option></select>
+  <label id="fl">파일 선택</label>
+  <input id="file" type="file">
+  <label>비밀번호</label>
+  <input id="pw" type="password" placeholder="비밀번호">
+  <button id="go">실행</button>
+  <div id="msg" style="margin-top:10px;color:#0f172a"></div>
+  <small>클라이언트 전용. 서버로 업로드 안 함.</small>
+</div>
+<script>
+const MAGIC = new TextEncoder().encode('1129'); const SALT=16, IV=12, ITERS=200000;
+async function derive(pw, salt){const enc=new TextEncoder();const base=await crypto.subtle.importKey('raw',enc.encode(pw),{name:'PBKDF2'},false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:ITERS,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
+function cat(a){let t=a.reduce((s,o)=>s+o.length,0);let r=new Uint8Array(t);let off=0;for(const x of a){r.set(x,off);off+=x.length}return r}
+function save(b,n){const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+async function enc(file,pw){const ab=await file.arrayBuffer();const salt=crypto.getRandomValues(new Uint8Array(SALT));const iv=crypto.getRandomValues(new Uint8Array(IV));const key=await derive(pw,salt);const cipher=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,ab));const out=cat([MAGIC,salt,iv,cipher]);save(new Blob([out]), file.name+'.1129code');return '암호화 완료';}
+async function dec(file,pw){const ab=await file.arrayBuffer();const u=new Uint8Array(ab);if(u.length<4+SALT+IV) throw '파일 포맷 오류';for(let i=0;i<4;i++) if(u[i]!==MAGIC[i]) throw '포맷 불일치';const salt=u.slice(4,4+SALT);const iv=u.slice(4+SALT,4+SALT+IV);const cipher=u.slice(4+SALT+IV);const key=await derive(pw,salt);try{const plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher));return {blob:new Blob([plain]), name: (file.name.endsWith('.1129code')?file.name.slice(0,-8):file.name+'.dec')};}catch(e){throw '비밀번호 틀림 또는 손상'} }
+
+document.getElementById('go').addEventListener('click',async()=>{const m=document.getElementById('mode').value;const f=document.getElementById('file').files[0];const pw=document.getElementById('pw').value;const msg=document.getElementById('msg');msg.textContent='';if(!f){msg.textContent='파일 선택';return}if(!pw){msg.textContent='비밀번호 입력';return}try{ if(m==='enc'){msg.textContent=await enc(f,pw)}else{const r=await dec(f,pw);save(r.blob,r.name);msg.textContent='복호화 성공'} }catch(e){msg.textContent=e}
+});
+</script>
+</body>
+</html>
